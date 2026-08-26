@@ -13,9 +13,35 @@ build: ## Build the pgsink binary into bin/
 	go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY) ./cmd/pgsink
 	@echo "→ $(BIN_DIR)/$(BINARY)  ($(VERSION))"
 
+PG_CONTAINER := pgsink-dev
+PG_PORT      := 55432
+PG_DSN       := postgres://pgsink:pgsink@localhost:$(PG_PORT)/pgsink
+
 .PHONY: test
-test: ## Run all tests
+test: ## Run all tests (PostgreSQL tests skip unless PGSINK_TEST_DSN is set)
 	go test ./...
+
+.PHONY: test-all
+test-all: pg-up ## Run all tests including the PostgreSQL integration tests
+	PGSINK_TEST_DSN="$(PG_DSN)" go test ./...
+
+.PHONY: pg-up
+pg-up: ## Start a throwaway PostgreSQL for the integration tests
+	@docker inspect $(PG_CONTAINER) >/dev/null 2>&1 || \
+	  docker run -d --name $(PG_CONTAINER) \
+	    -e POSTGRES_USER=pgsink -e POSTGRES_PASSWORD=pgsink -e POSTGRES_DB=pgsink \
+	    -p $(PG_PORT):5432 postgres:17-alpine >/dev/null
+	@docker start $(PG_CONTAINER) >/dev/null 2>&1 || true
+	@for i in $$(seq 1 30); do \
+	  docker exec $(PG_CONTAINER) pg_isready -U pgsink -q 2>/dev/null && break; \
+	  sleep 1; \
+	done
+	@echo "PGSINK_TEST_DSN=$(PG_DSN)"
+
+.PHONY: pg-down
+pg-down: ## Remove the throwaway PostgreSQL
+	-docker rm -f $(PG_CONTAINER) >/dev/null 2>&1
+	@echo "removed $(PG_CONTAINER)"
 
 .PHONY: check
 check: vet test build ## Vet + test + build (use in CI)

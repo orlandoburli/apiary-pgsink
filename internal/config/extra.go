@@ -7,7 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/orlandoburli/apiary-pgsink/internal/target"
+	"github.com/orlandoburli/apiary-pgsink/internal/pgtype"
 )
 
 // Extra is one injected column: a value template and the PostgreSQL type the
@@ -23,7 +23,7 @@ import (
 //	replica_lag_ms: {value: 0, type: bigint}
 type Extra struct {
 	Value string        `yaml:"value"`
-	Type  target.PGType `yaml:"type,omitempty"`
+	Type  pgtype.PGType `yaml:"type,omitempty"`
 }
 
 // placeholder matches ${...} spans. The inner grammar is checked separately so
@@ -33,7 +33,7 @@ var placeholder = regexp.MustCompile(`\$\{([^}]*)\}`)
 // Validate checks the template's placeholders and the declared type.
 func (e Extra) Validate() error {
 	if e.Type != "" {
-		if _, err := target.ParsePGType(string(e.Type)); err != nil {
+		if _, err := pgtype.ParsePGType(string(e.Type)); err != nil {
 			return err
 		}
 	}
@@ -102,14 +102,14 @@ func validEnvName(s string) bool {
 // Inference is intentionally shallow: ${now} is a timestamp and everything else
 // is text. Guessing that "123" means bigint would make a column's type depend on
 // the first value someone happened to write, and change under them later.
-func (e Extra) ResolvedType() target.PGType {
+func (e Extra) ResolvedType() pgtype.PGType {
 	if e.Type != "" {
 		return e.Type
 	}
 	if strings.TrimSpace(e.Value) == "${now}" {
-		return target.TimestampTZ
+		return pgtype.TimestampTZ
 	}
-	return target.Text
+	return pgtype.Text
 }
 
 // References reports whether the template reads a source column, which decides
@@ -145,6 +145,6 @@ func (e *Extra) UnmarshalYAML(node *yaml.Node) error {
 		return fmt.Errorf("extra field needs a value")
 	}
 	e.Value = fmt.Sprintf("%v", long.Value)
-	e.Type = target.PGType(strings.ToLower(strings.TrimSpace(long.Type)))
+	e.Type = pgtype.PGType(strings.ToLower(strings.TrimSpace(long.Type)))
 	return nil
 }

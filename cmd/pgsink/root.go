@@ -9,8 +9,8 @@ func newRootCmd() *cobra.Command {
 		Long: `pgsink backfills Apiary's history into PostgreSQL and then follows it.
 
   pgsink doctor     check the catalog against a live Apiary database
-  pgsink migrate    create or alter the target tables       (not yet implemented)
-  pgsink backfill   load history                            (not yet implemented)
+  pgsink migrate    create or alter the target tables
+  pgsink backfill   load history
   pgsink sync       follow forever                          (not yet implemented)
 
 Backfill and sync are the same pipeline; only the starting watermark and the
@@ -19,6 +19,6 @@ stop condition differ.`,
 		SilenceErrors: true,
 		Version:       version,
 	}
-	cmd.AddCommand(newDoctorCmd())
+	cmd.AddCommand(newDoctorCmd(), newMigrateCmd(), newBackfillCmd())
 	return cmd
 }

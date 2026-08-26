@@ -8,6 +8,19 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pgsink
+          POSTGRES_PASSWORD: pgsink
+          POSTGRES_DB: pgsink
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pgsink"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGSINK_TEST_DSN: postgres://pgsink:pgsink@localhost:5432/pgsink
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

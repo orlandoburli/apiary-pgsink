@@ -21,7 +21,7 @@ follower has.
 
 ## Status
 
-Early. `doctor` works; `migrate`, `backfill` and `sync` are not implemented yet.
+`doctor`, `migrate` and `backfill` work. `sync` is next.
 
 ## Requirements
 

@@ -1,5 +1,6 @@
-// Package target writes to PostgreSQL.
-package target
+// Package pgtype is the PostgreSQL type vocabulary shared by configuration
+// and DDL generation. It is a leaf: it imports nothing of pgsink's own.
+package pgtype
 
 import (
 	"fmt"

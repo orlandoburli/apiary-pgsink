@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/orlandoburli/apiary-pgsink/internal/catalog"
-	"github.com/orlandoburli/apiary-pgsink/internal/target"
+	"github.com/orlandoburli/apiary-pgsink/internal/pgtype"
 )
 
 const minimal = `
@@ -321,17 +321,17 @@ defaults:
     ingested_at: "${now}"
     lag_ms: {value: 0, type: bigint}
 `)
-	types := map[string]target.PGType{}
+	types := map[string]pgtype.PGType{}
 	for _, e := range table(t, p, "tasks").ExtraFields {
 		types[e.Name] = e.ResolvedType()
 	}
-	if types["tenant_id"] != target.Text {
+	if types["tenant_id"] != pgtype.Text {
 		t.Errorf("tenant_id = %q, want text", types["tenant_id"])
 	}
-	if types["ingested_at"] != target.TimestampTZ {
+	if types["ingested_at"] != pgtype.TimestampTZ {
 		t.Errorf("ingested_at = %q, want timestamptz", types["ingested_at"])
 	}
-	if types["lag_ms"] != target.BigInt {
+	if types["lag_ms"] != pgtype.BigInt {
 		t.Errorf("lag_ms = %q, want the declared bigint", types["lag_ms"])
 	}
 }
@@ -341,7 +341,7 @@ defaults:
 func TestNumericLookingLiteralStaysText(t *testing.T) {
 	p := resolve(t, "defaults:\n  extra_fields: {build: 123}\n")
 	for _, e := range table(t, p, "tasks").ExtraFields {
-		if e.Name == "build" && e.ResolvedType() != target.Text {
+		if e.Name == "build" && e.ResolvedType() != pgtype.Text {
 			t.Errorf("build = %q, want text unless declared", e.ResolvedType())
 		}
 	}
