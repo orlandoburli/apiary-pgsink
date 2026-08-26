@@ -2,22 +2,25 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/orlandoburli/apiary-pgsink/internal/catalog"
+	"github.com/orlandoburli/apiary-pgsink/internal/config"
 	sqlitesrc "github.com/orlandoburli/apiary-pgsink/internal/source/sqlite"
 )
 
 func newDoctorCmd() *cobra.Command {
-	var dbPath string
+	var dbPath, configPath string
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check the table catalog against a live Apiary database",
 		Long: `Reflects the schema of a running Apiary installation and compares it
-against pgsink's table catalog.
+against pgsink's table catalog, and validates a configuration file against both.
 
 Errors mean replication would be incorrect — a cursor or key column pgsink
 depends on has changed. Warnings mean something moved that is worth a look but
@@ -50,10 +53,6 @@ replicates what it reflects, so new columns need no catalog change.`,
 				return err
 			}
 			findings := catalog.Drift(cat, live)
-			if len(findings) == 0 {
-				fmt.Fprintf(out, "no drift — the catalog matches all %d tables\n", len(live))
-				return nil
-			}
 			for _, f := range findings {
 				fmt.Fprintln(out, f)
 			}
@@ -65,16 +64,77 @@ replicates what it reflects, so new columns need no catalog change.`,
 					warnings++
 				}
 			}
-			fmt.Fprintf(out, "\n%d error(s), %d warning(s)\n", errors, warnings)
+			if len(findings) == 0 {
+				fmt.Fprintf(out, "schema      no drift — the catalog matches all %d tables\n", len(live))
+			} else {
+				fmt.Fprintf(out, "\nschema      %d error(s), %d warning(s)\n", errors, warnings)
+			}
+
+			configErrs := checkConfig(out, configPath, cat, live)
+
 			if catalog.HasErrors(findings) {
-				return fmt.Errorf("catalog does not match this Apiary database; replication would be incorrect")
+				return fmt.Errorf("the catalog does not match this Apiary database; replication would be incorrect")
+			}
+			if configErrs > 0 {
+				return fmt.Errorf("the configuration does not fit this Apiary database")
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&dbPath, "db", "",
 		"path to apiary.db (default: ./.apiary/apiary.db, then ~/.apiary/apiary.db)")
+	cmd.Flags().StringVar(&configPath, "config", "",
+		"path to pgsink.yaml; when omitted, only the schema is checked")
 	return cmd
+}
+
+// checkConfig resolves a configuration against the catalog and the live schema,
+// printing what it finds. Returns the number of errors.
+//
+// Doing this here rather than at startup is the point: an operator can see that
+// a filter names a column their Apiary does not have, or that an extra field
+// shadows a real one, without running a replication pass to find out.
+func checkConfig(out io.Writer, path string, cat *catalog.Catalog, live catalog.LiveSchema) int {
+	if path == "" {
+		return 0
+	}
+	file, err := config.Load(path)
+	if err != nil {
+		fmt.Fprintf(out, "\nconfig      %v\n", err)
+		return 1
+	}
+	plan, errs := config.Resolve(file, cat)
+	if len(errs) > 0 {
+		fmt.Fprintf(out, "\nconfig      %d error(s)\n", len(errs))
+		for _, e := range errs {
+			fmt.Fprintf(out, "error %s\n", e)
+		}
+		return len(errs)
+	}
+	errs = plan.Check(live)
+	for _, e := range errs {
+		fmt.Fprintf(out, "error %s\n", e)
+	}
+
+	skipped := 0
+	for _, t := range plan.Tables {
+		if _, ok := live[t.Name]; !ok {
+			skipped++
+		}
+	}
+	fmt.Fprintf(out, "\nconfig      %s — %d table(s) enabled", path, len(plan.Tables))
+	if skipped > 0 {
+		fmt.Fprintf(out, ", %d absent from this database and skipped", skipped)
+	}
+	if n := len(plan.Unwindowed); n > 0 {
+		fmt.Fprintf(out, "\n            %d table(s) have no time column and replicate in full: %s",
+			n, strings.Join(plan.Unwindowed, ", "))
+	}
+	if len(errs) > 0 {
+		fmt.Fprintf(out, ", %d error(s)", len(errs))
+	}
+	fmt.Fprintln(out)
+	return len(errs)
 }
 
 // resolveDBPath mirrors where Apiary itself puts its database: a .apiary

@@ -83,12 +83,15 @@ type Parent struct {
 
 // Table is one entry in the catalog.
 type Table struct {
-	Name         string   `yaml:"name"`
-	Class        Class    `yaml:"class"`
-	Key          []string `yaml:"key"`
-	Cursor       *Cursor  `yaml:"cursor,omitempty"`
-	State        *State   `yaml:"state,omitempty"`
-	Parent       *Parent  `yaml:"parent,omitempty"`
+	Name   string   `yaml:"name"`
+	Class  Class    `yaml:"class"`
+	Key    []string `yaml:"key"`
+	Cursor *Cursor  `yaml:"cursor,omitempty"`
+	State  *State   `yaml:"state,omitempty"`
+	Parent *Parent  `yaml:"parent,omitempty"`
+	// TimeColumn is this table's own time dimension, which a `since` window
+	// resolves against. Empty for tables that have none.
+	TimeColumn   string   `yaml:"time_column,omitempty"`
 	Timestamps   []string `yaml:"timestamps,omitempty"`
 	JSONColumns  []string `yaml:"json_columns,omitempty"`
 	LargeColumns []string `yaml:"large_columns,omitempty"`
@@ -212,6 +215,9 @@ func (c *Catalog) Validate() []error {
 				errs = append(errs, fmt.Errorf("%s: cursor.kind %q must be integer or timestamp", where, t.Cursor.Kind))
 			}
 		}
+		if t.TimeColumn != "" && len(t.Timestamps) > 0 && !containsStr(t.Timestamps, t.TimeColumn) {
+			errs = append(errs, fmt.Errorf("%s: time_column %q is not listed in timestamps", where, t.TimeColumn))
+		}
 		if t.State != nil && strings.TrimSpace(t.State.Column) == "" {
 			errs = append(errs, fmt.Errorf("%s: state.column is required when state is declared", where))
 		}
@@ -233,6 +239,15 @@ func (c *Catalog) Validate() []error {
 		}
 	}
 	return errs
+}
+
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func joinErrs(errs []error) string {

@@ -17,6 +17,12 @@
 #   follow_parent No usable cursor of its own. Re-read whenever the parent row
 #                 moves.
 #   snapshot      Small enough to compare wholesale each cycle.
+#
+# time_column is the table's own time dimension, which `defaults.since` resolves
+# against. No two Apiary tables agree on what it is called — created_at,
+# timestamp, checked_at, started_at, registered_at — so a global filter naming a
+# literal column would simply not exist on most of them. Tables with no time
+# dimension at all have none, and are never windowed.
 
 schema_version: 1
 apiary_compat: ">=0.12.0"
@@ -27,6 +33,7 @@ tables:
   # ---------- append_only ----------
 
   - name: execution_events
+    time_column: timestamp
     class: append_only
     key: [id]
     cursor: {column: id, kind: integer}
@@ -37,6 +44,7 @@ tables:
       Also the cheapest thing to ingest and the best default-on table.
 
   - name: task_logs
+    time_column: timestamp
     class: append_only
     key: [id]
     cursor: {column: id, kind: integer}
@@ -48,6 +56,7 @@ tables:
       retention window, so the sink will retain rows the source has dropped.
 
   - name: service_logs
+    time_column: timestamp
     class: append_only
     key: [id]
     cursor: {column: id, kind: integer}
@@ -57,6 +66,7 @@ tables:
     notes: Pruned on the same retention window as task_logs.
 
   - name: ci_poll_checks
+    time_column: checked_at
     class: append_only
     key: [id]
     cursor: {column: id, kind: integer}
@@ -64,6 +74,7 @@ tables:
     json_columns: [detail]
 
   - name: task_checkpoints
+    time_column: created_at
     class: append_only
     key: [id]
     cursor: {column: id, kind: integer}
@@ -71,12 +82,14 @@ tables:
     json_columns: [metadata]
 
   - name: approval_responses
+    time_column: created_at
     class: append_only
     key: [id]
     cursor: {column: id, kind: integer}
     timestamps: [created_at]
 
   - name: source_bindings
+    time_column: created_at
     class: append_only
     key: [id]
     cursor: {column: created_at, kind: timestamp}
@@ -87,6 +100,7 @@ tables:
       something to rely on across clock adjustments.
 
   - name: improvement_runs
+    time_column: created_at
     class: append_only
     key: [id]
     cursor: {column: created_at, kind: timestamp}
@@ -96,6 +110,7 @@ tables:
   # ---------- mutable ----------
 
   - name: tasks
+    time_column: created_at
     class: mutable
     key: [id]
     cursor: {column: updated_at, kind: timestamp}
@@ -103,6 +118,7 @@ tables:
     large_columns: [output, full_output, error_message]
 
   - name: internal_tasks
+    time_column: created_at
     class: mutable
     key: [id]
     cursor: {column: updated_at, kind: timestamp}
@@ -111,6 +127,7 @@ tables:
     notes: The canonical unit of work. Parent of the task lineage tree.
 
   - name: workflow_instances
+    time_column: created_at
     class: mutable
     key: [id]
     cursor: {column: updated_at, kind: timestamp}
@@ -118,6 +135,7 @@ tables:
     timestamps: [created_at, updated_at]
 
   - name: dispatch_jobs
+    time_column: created_at
     class: mutable
     key: [id]
     cursor: {column: updated_at, kind: timestamp}
@@ -127,12 +145,14 @@ tables:
     large_columns: [payload]
 
   - name: agents
+    time_column: updated_at
     class: mutable
     key: [id]
     cursor: {column: updated_at, kind: timestamp}
     timestamps: [updated_at, last_task_ended_at]
 
   - name: worker_registrations
+    time_column: registered_at
     class: mutable
     key: [id]
     cursor: {column: updated_at, kind: timestamp}
@@ -140,6 +160,7 @@ tables:
     json_columns: [labels, capabilities]
 
   - name: dispatcher_state
+    time_column: updated_at
     class: mutable
     key: [id]
     cursor: {column: updated_at, kind: timestamp}
@@ -149,6 +170,7 @@ tables:
   # ---------- open_row ----------
 
   - name: task_executions
+    time_column: created_at
     class: open_row
     key: [id]
     cursor: {column: id, kind: integer}
@@ -164,6 +186,7 @@ tables:
       be zero.
 
   - name: step_runs
+    time_column: started_at
     class: open_row
     key: [id]
     cursor: {column: finished_at, kind: timestamp}
@@ -180,6 +203,7 @@ tables:
       here; this is the highest-value reporting table in the schema.
 
   - name: dispatch_attempts
+    time_column: started_at
     class: open_row
     key: [id]
     cursor: {column: finished_at, kind: timestamp}
@@ -189,6 +213,7 @@ tables:
     timestamps: [started_at, finished_at, lease_expires_at, heartbeat_at]
 
   - name: approval_requests
+    time_column: created_at
     class: open_row
     key: [id]
     cursor: {column: created_at, kind: timestamp}
@@ -202,6 +227,7 @@ tables:
       awaiting a decision and must keep being re-read.
 
   - name: task_pull_requests
+    time_column: created_at
     class: open_row
     key: [id]
     cursor: {column: created_at, kind: timestamp}
@@ -214,6 +240,7 @@ tables:
   # ---------- follow_parent ----------
 
   - name: workflow_instance_snapshots
+    time_column: created_at
     class: follow_parent
     key: [instance_id]
     parent: {table: workflow_instances, local: instance_id, remote: id}

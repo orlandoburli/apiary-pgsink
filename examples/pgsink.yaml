@@ -1,0 +1,75 @@
+# apiary-pgsink — worked example.
+#
+# pgsink runs on the same host as the Apiary daemon, as the daemon's user.
+# See https://orlandoburli.com.br/apiary-pgsink/deployment/
+
+source:
+  dsn: sqlite:///home/apiary/.apiary/apiary.db
+  # Identifies this Apiary in the target, so several can share one database.
+  # Also what ${source.instance} expands to. Changing it later means reloading.
+  instance: laptop
+  # The daemon's socket. Its event stream nudges the sync loop; sync.interval
+  # stays as the fallback. Apiary does not serve this over TCP.
+  wake: unix:///home/apiary/.apiary/apiary.sock
+
+target:
+  dsn: "${env:POSTGRES_DSN}"
+  schema: apiary
+
+sync:
+  interval: 10s
+  batch_size: 2000
+  # Re-read window behind the watermark on timestamp cursors, absorbing
+  # same-second writes and small clock adjustments. The upsert makes the
+  # re-delivery harmless.
+  overlap: 30s
+
+# ---------------------------------------------------------------------------
+# Global defaults. Applied to every table; see the merge rules below.
+# ---------------------------------------------------------------------------
+defaults:
+  extra_fields:
+    tenant_id: "acme"
+    apiary_instance: "${source.instance}"
+    ingested_at: "${now}"
+    deploy_env: "${env:DEPLOY_ENV}"
+
+  # These columns hold whole agent transcripts. They are the great majority of
+  # the bytes and the most likely place for anything sensitive, so they are off
+  # by default — add them back per table if you actually want them.
+  exclude_columns: [input_prompt, output_text, full_output]
+
+  # Windows every table by its own time column — created_at here, timestamp
+  # there, checked_at, started_at, registered_at elsewhere. A literal filter on
+  # "created_at" would be missing from most of the schema; this resolves through
+  # the catalog. Rows with an unknown timestamp are kept: they are in flight.
+  since: "2026-01-01"
+
+# ---------------------------------------------------------------------------
+# Per table. Merge rules, which are deliberately not all symmetric:
+#
+#   extra_fields     shallow merge, table key wins
+#   exclude_columns  union — a global exclusion can never be re-admitted here
+#   include_columns  table-only; there is no global form
+#   filters          AND — a global filter is a guarantee, not a default
+#
+# ignore_global_filters is the single, loud escape hatch.
+# ---------------------------------------------------------------------------
+tables:
+  task_executions:
+    extra_fields:
+      runner_used: "${row.runner}"
+    filters:
+      - {column: status, op: in, value: [success, failed]}
+
+  step_runs:
+    # Per-step tokens, cost and timings: the highest-value reporting table.
+    json_columns: [structured_output]
+
+  # Where the volume is: roughly 10KB of agent stream text per row, and Apiary
+  # prunes both on a retention window anyway.
+  task_logs: {enabled: false}
+  service_logs: {enabled: false}
+
+  # A dedup ledger with no reporting value.
+  pr_event_dispatches: {enabled: false}
