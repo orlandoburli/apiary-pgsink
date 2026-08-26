@@ -1,0 +1,250 @@
+# Apiary table catalog — how pgsink follows each table.
+#
+# This file is DATA, not code. An Apiary schema change is an edit here plus a
+# release; `pgsink doctor` reflects the live SQLite schema and reports drift
+# against it, so a mismatch surfaces as a warning rather than a wrong number.
+#
+# class:
+#   append_only   Rows are inserted and never updated. A monotonic cursor is
+#                 exact and sufficient.
+#   mutable       Rows are updated in place and carry `updated_at`. Cursor on
+#                 updated_at with an overlap window; upsert makes re-delivery
+#                 harmless.
+#   open_row      Rows are updated in place but carry NO updated_at. Cursor
+#                 covers inserts; rows whose state column is non-terminal are
+#                 re-read every cycle regardless of cursor. That set is bounded
+#                 by concurrency, so it is a handful of rows, not a scan.
+#   follow_parent No usable cursor of its own. Re-read whenever the parent row
+#                 moves.
+#   snapshot      Small enough to compare wholesale each cycle.
+
+schema_version: 1
+apiary_compat: ">=0.12.0"
+generated_from: apiary v0.17.x (24 tables)
+
+tables:
+
+  # ---------- append_only ----------
+
+  - name: execution_events
+    class: append_only
+    key: [id]
+    cursor: {column: id, kind: integer}
+    timestamps: [timestamp]
+    json_columns: [metadata]
+    notes: >
+      The lifecycle event log. Already redacted on write by the daemon.
+      Also the cheapest thing to ingest and the best default-on table.
+
+  - name: task_logs
+    class: append_only
+    key: [id]
+    cursor: {column: id, kind: integer}
+    timestamps: [timestamp]
+    large_columns: [message]
+    volume: high
+    notes: >
+      Agent stream text, roughly 10KB per row. Apiary prunes this table on a
+      retention window, so the sink will retain rows the source has dropped.
+
+  - name: service_logs
+    class: append_only
+    key: [id]
+    cursor: {column: id, kind: integer}
+    timestamps: [timestamp]
+    large_columns: [message]
+    volume: high
+    notes: Pruned on the same retention window as task_logs.
+
+  - name: ci_poll_checks
+    class: append_only
+    key: [id]
+    cursor: {column: id, kind: integer}
+    timestamps: [checked_at]
+    json_columns: [detail]
+
+  - name: task_checkpoints
+    class: append_only
+    key: [id]
+    cursor: {column: id, kind: integer}
+    timestamps: [created_at]
+    json_columns: [metadata]
+
+  - name: approval_responses
+    class: append_only
+    key: [id]
+    cursor: {column: id, kind: integer}
+    timestamps: [created_at]
+
+  - name: source_bindings
+    class: append_only
+    key: [id]
+    cursor: {column: created_at, kind: timestamp}
+    timestamps: [created_at]
+    notes: >
+      ULID primary key, immutable after insert. Cursor on created_at rather
+      than id because the ULID is TEXT — lexicographically monotonic, but not
+      something to rely on across clock adjustments.
+
+  - name: improvement_runs
+    class: append_only
+    key: [id]
+    cursor: {column: created_at, kind: timestamp}
+    timestamps: [created_at]
+    notes: Written once when `apiary improve` completes a run.
+
+  # ---------- mutable ----------
+
+  - name: tasks
+    class: mutable
+    key: [id]
+    cursor: {column: updated_at, kind: timestamp}
+    timestamps: [created_at, updated_at, started_at, completed_at]
+    large_columns: [output, full_output, error_message]
+
+  - name: internal_tasks
+    class: mutable
+    key: [id]
+    cursor: {column: updated_at, kind: timestamp}
+    timestamps: [created_at, updated_at]
+    json_columns: [input, metadata]
+    notes: The canonical unit of work. Parent of the task lineage tree.
+
+  - name: workflow_instances
+    class: mutable
+    key: [id]
+    cursor: {column: updated_at, kind: timestamp}
+    state: {column: state, terminal: [done, failed, interrupted]}
+    timestamps: [created_at, updated_at]
+
+  - name: dispatch_jobs
+    class: mutable
+    key: [id]
+    cursor: {column: updated_at, kind: timestamp}
+    state: {column: state, terminal: [succeeded, failed, canceled]}
+    timestamps: [created_at, updated_at, available_at, lease_expires_at, terminal_at]
+    json_columns: [payload, required_labels, required_capabilities]
+    large_columns: [payload]
+
+  - name: agents
+    class: mutable
+    key: [id]
+    cursor: {column: updated_at, kind: timestamp}
+    timestamps: [updated_at, last_task_ended_at]
+
+  - name: worker_registrations
+    class: mutable
+    key: [id]
+    cursor: {column: updated_at, kind: timestamp}
+    timestamps: [updated_at, registered_at, last_heartbeat]
+    json_columns: [labels, capabilities]
+
+  - name: dispatcher_state
+    class: mutable
+    key: [id]
+    cursor: {column: updated_at, kind: timestamp}
+    timestamps: [updated_at]
+    notes: Exactly one row, id=1. Cheap to follow, rarely interesting.
+
+  # ---------- open_row ----------
+
+  - name: task_executions
+    class: open_row
+    key: [id]
+    cursor: {column: id, kind: integer}
+    state: {column: status, terminal: [success, failed]}
+    timestamps: [created_at, started_at, completed_at, next_retry_at, heartbeat_at]
+    json_columns: [slow_tools]
+    large_columns: [input_prompt, output_text, error_message]
+    notes: >
+      THE reason open_row exists. CreateExecution inserts with status='running'
+      and zero cost; UpdateExecution fills in tokens, cost, timings and final
+      status when the agent finishes. An id-only cursor would replicate the
+      empty row and never see the update — every cost figure downstream would
+      be zero.
+
+  - name: step_runs
+    class: open_row
+    key: [id]
+    cursor: {column: finished_at, kind: timestamp}
+    state:
+      column: state
+      terminal: [passed, failed, skipped, skipped_cached, interrupted]
+    timestamps: [started_at, finished_at]
+    json_columns: [structured_output, publish_payload, slow_tools]
+    large_columns: [output, structured_output, summary, input_prompt]
+    notes: >
+      Same write-twice lifecycle as task_executions, and no created_at either —
+      a row that has not started has both timestamps NULL, so the non-terminal
+      rescan is the only thing that finds it. Per-step tokens and cost live
+      here; this is the highest-value reporting table in the schema.
+
+  - name: dispatch_attempts
+    class: open_row
+    key: [id]
+    cursor: {column: finished_at, kind: timestamp}
+    state:
+      column: state
+      terminal: [succeeded, failed, expired, canceled]
+    timestamps: [started_at, finished_at, lease_expires_at, heartbeat_at]
+
+  - name: approval_requests
+    class: open_row
+    key: [id]
+    cursor: {column: created_at, kind: timestamp}
+    state:
+      column: status
+      terminal: [approved, rejected, timed_out]
+    timestamps: [created_at, expires_at, reminded_at, escalated_at, responded_at]
+    json_columns: [approvers, delegates, fields, response_values]
+    notes: >
+      'escalated' is deliberately NOT terminal — an escalated request is still
+      awaiting a decision and must keep being re-read.
+
+  - name: task_pull_requests
+    class: open_row
+    key: [id]
+    cursor: {column: created_at, kind: timestamp}
+    state: {column: pr_state, terminal: [merged, closed]}
+    timestamps: [created_at]
+    notes: >
+      pr_url and pr_state are updated in place as the PR moves. pr_state may be
+      NULL for rows recorded before the state was known; NULL counts as open.
+
+  # ---------- follow_parent ----------
+
+  - name: workflow_instance_snapshots
+    class: follow_parent
+    key: [instance_id]
+    parent: {table: workflow_instances, local: instance_id, remote: id}
+    timestamps: [created_at]
+    json_columns: [workflow_json]
+    large_columns: [workflow_json]
+    notes: >
+      Upserted with ON CONFLICT DO UPDATE, and created_at is NOT touched on
+      update — so created_at cannot serve as a cursor. Practically write-once,
+      but restart and retry paths do rewrite it.
+
+  - name: improvement_findings
+    class: follow_parent
+    key: [id]
+    parent: {table: improvement_runs, local: run_id, remote: id}
+    large_columns: [patch, rationale, baseline_metrics]
+    json_columns: [baseline_metrics]
+    notes: No timestamp columns at all. Only reachable through its run.
+
+  # ---------- snapshot ----------
+
+  - name: pr_event_watermarks
+    class: snapshot
+    key: [source_id]
+    timestamps: [watermark]
+    notes: Two columns, one row per source. Compare wholesale.
+
+  - name: pr_event_dispatches
+    class: snapshot
+    key: [source_id, event_id, workflow_id]
+    notes: >
+      Composite key, no timestamp. Insert-only in practice (it is a dedup
+      ledger) but has no cursor column, so it is compared wholesale. Bounded by
+      the PR-event retention Apiary applies to it.

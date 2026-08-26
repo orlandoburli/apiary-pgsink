@@ -1,0 +1,39 @@
+site_name: apiary-pgsink
+site_description: Replicate an Apiary database into PostgreSQL
+site_url: https://orlandoburli.github.io/apiary-pgsink/
+repo_url: https://github.com/orlandoburli/apiary-pgsink
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    scheme: default
+    primary: white
+    accent: indigo
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.tracking
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed: {alternate_style: true}
+  - pymdownx.highlight: {anchor_linenums: true}
+  - pymdownx.inlinehilite
+  - attr_list
+  - md_in_html
+  - tables
+
+nav:
+  - Home: index.md
+  - Deployment: deployment.md
+  - Table catalog: catalog.md
+
+extra:
+  social:
+    - icon: fontawesome/solid/link
+      link: https://orlandoburli.github.io/apiary
+      name: Apiary documentation

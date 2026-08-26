@@ -1,0 +1,8 @@
+/bin/
+/site/
+*.db
+*.db-wal
+*.db-shm
+coverage.out
+.DS_Store
+/docs/index.md
