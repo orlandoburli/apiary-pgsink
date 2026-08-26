@@ -21,6 +21,16 @@ import (
 // silently overwrite the first because someone forgot to configure it.
 const InstanceColumn = "apiary_instance"
 
+// QuarantineTable holds rows the target refused.
+//
+// A batch is written in one transaction, so one bad row fails the whole batch —
+// and if that row is inside the watermark's range it fails the same batch on
+// every pass, forever. The sink would stall on a single value and report only a
+// repeating error. Quarantining the row instead lets the rest of the batch land
+// and the watermark advance, and leaves the failure somewhere an operator can
+// actually look at it.
+const QuarantineTable = "apiary_quarantine"
+
 // StateTable records how far each table has been replicated. It lives in the
 // target so the sink itself is stateless: move it to another host and it
 // resumes from where the data actually is.
@@ -126,6 +136,19 @@ func StateTableSQL(schema string) string {
 )`, schema, StateTable,
 		InstanceColumn, "table_name", "cursor_kind", "cursor_value", "rows_total", "updated_at",
 		InstanceColumn)
+}
+
+// QuarantineTableSQL renders the quarantine table.
+func QuarantineTableSQL(schema string) string {
+	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (
+  id            bigserial   PRIMARY KEY,
+  %-13s text        NOT NULL,
+  table_name    text        NOT NULL,
+  row_key       text,
+  error_message text        NOT NULL,
+  row_data      jsonb       NOT NULL,
+  quarantined_at timestamptz NOT NULL DEFAULT now()
+)`, schema, QuarantineTable, InstanceColumn)
 }
 
 // Change is one piece of work `migrate` would do.

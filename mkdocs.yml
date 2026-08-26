@@ -31,6 +31,7 @@ nav:
   - Home: index.md
   - Deployment: deployment.md
   - Commands: commands.md
+  - Operating: operating.md
   - Table catalog: catalog.md
   - Licensing: commercial.md
 

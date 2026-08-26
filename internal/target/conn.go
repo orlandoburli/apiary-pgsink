@@ -47,6 +47,9 @@ func (d *DB) EnsureSchema(ctx context.Context) error {
 	if _, err := d.pool.Exec(ctx, StateTableSQL(d.schema)); err != nil {
 		return fmt.Errorf("create %s.%s: %w", d.schema, StateTable, err)
 	}
+	if _, err := d.pool.Exec(ctx, QuarantineTableSQL(d.schema)); err != nil {
+		return fmt.Errorf("create %s.%s: %w", d.schema, QuarantineTable, err)
+	}
 	return nil
 }
 

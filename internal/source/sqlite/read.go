@@ -108,20 +108,30 @@ func Compile(filters []config.Filter) (string, []any) {
 			if f.Op == config.OpNotIn {
 				op = "NOT IN"
 			}
-			parts = append(parts, wrapNull(f, fmt.Sprintf("%s %s (%s)", f.Column, op, strings.Join(holders, ", "))))
+			parts = append(parts, admitNulls(f, fmt.Sprintf("%s %s (%s)", f.Column, op, strings.Join(holders, ", "))))
 			continue
 		}
-		parts = append(parts, wrapNull(f, fmt.Sprintf("%s %s ?", f.Column, sqlOp(f.Op))))
+		parts = append(parts, admitNulls(f, fmt.Sprintf("%s %s ?", f.Column, sqlOp(f.Op))))
 		args = append(args, f.Value)
 	}
 	return strings.Join(parts, " AND "), args
 }
 
-// wrapNull widens a comparison to keep rows whose value is NULL, for the
-// since/until window. SQL's three-valued logic makes `started_at >= x` false
-// for a NULL, which would drop precisely the rows that have not started yet.
-func wrapNull(f config.Filter, expr string) string {
-	if !f.OrNull {
+// admitNulls widens a comparison to keep rows whose value is NULL.
+//
+// SQL's three-valued logic makes every comparison against NULL false, including
+// the negative ones — `status != 'failed'` and `status NOT IN ('failed')` both
+// silently drop a row whose status is NULL. That is not what "everything except
+// failures" means to the person who wrote it, and losing rows to it is invisible
+// in the result.
+//
+// So the negative operators admit NULLs, and the positive ones do not: a NULL is
+// not equal to, or greater than, anything under any reading. The since/until
+// window sets OrNull for the same reason on a comparison that is nominally
+// positive — a step_run that has not started has a NULL started_at and is the
+// most current row there is.
+func admitNulls(f config.Filter, expr string) string {
+	if !f.OrNull && f.Op != config.OpNe && f.Op != config.OpNotIn {
 		return expr
 	}
 	return fmt.Sprintf("(%s OR %s IS NULL)", expr, f.Column)

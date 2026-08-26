@@ -1,0 +1,41 @@
+version: 2
+project_name: pgsink
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: pgsink
+    main: ./cmd/pgsink
+    binary: pgsink
+    env:
+      - CGO_ENABLED=0 # modernc.org/sqlite and pgx are pure Go
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: pgsink
+    ids: [pgsink]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - examples/pgsink.yaml
+      - deploy/pgsink.service
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^chore:"]
+
+release:
+  draft: false

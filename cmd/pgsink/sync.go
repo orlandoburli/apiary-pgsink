@@ -7,12 +7,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/orlandoburli/apiary-pgsink/internal/catalog"
+	"github.com/orlandoburli/apiary-pgsink/internal/observe"
 	"github.com/orlandoburli/apiary-pgsink/internal/pipeline"
 	"github.com/orlandoburli/apiary-pgsink/internal/wake"
 )
 
 func newSyncCmd() *cobra.Command {
-	var configPath string
+	var configPath, metricsAddr string
 	var tables []string
 	var once, verbose bool
 
@@ -77,13 +78,32 @@ sync.interval becomes the fallback rather than the pace.`,
 				return err
 			}
 
+			metrics := observe.New(s.File.Source.Instance, time.Now())
+			if metricsAddr != "" && !once {
+				go func() {
+					if err := observe.Serve(ctx, metricsAddr, metrics); err != nil {
+						writeln(out, "metrics endpoint stopped: %v", err)
+					}
+				}()
+				writeln(out, "metrics on http://%s/metrics — /healthz, /readyz", observe.Addr(metricsAddr))
+			}
+
+			runner := &pipeline.Runner{
+				Source: s.Source, Live: s.Live, Target: db, Plan: s.Plan, Catalog: cat, Out: out,
+			}
+
 			opts := pipeline.LoopOptions{
 				Instance: s.File.Source.Instance,
 				Interval: interval,
 				Once:     once,
 				OnPass: func(p *pipeline.Pass) {
-					if verbose || p.Rows > 0 {
-						writeln(out, "%s  %s", time.Now().Format("15:04:05"), p)
+					now := time.Now()
+					metrics.RecordPass(now, p.Elapsed, results(p))
+					if lag, err := runner.Lag(ctx, s.File.Source.Instance, now); err == nil {
+						metrics.RecordLag(lag)
+					}
+					if verbose || p.Rows > 0 || p.Quarantined > 0 {
+						writeln(out, "%s  %s", now.Format("15:04:05"), p)
 					}
 					if verbose {
 						for _, r := range p.Results {
@@ -96,8 +116,10 @@ sync.interval becomes the fallback rather than the pace.`,
 				// A transient failure costs a pass, not the process. The sink
 				// runs beside a daemon that gets restarted and upgraded.
 				OnError: func(err error, backoff time.Duration) bool {
+					now := time.Now()
+					metrics.RecordError(now, err)
 					writeln(out, "%s  pass failed, retrying in %s: %v",
-						time.Now().Format("15:04:05"), backoff.Round(time.Second), err)
+						now.Format("15:04:05"), backoff.Round(time.Second), err)
 					return true
 				},
 			}
@@ -110,9 +132,6 @@ sync.interval becomes the fallback rather than the pace.`,
 				}
 			}
 
-			runner := &pipeline.Runner{
-				Source: s.Source, Live: s.Live, Target: db, Plan: s.Plan, Catalog: cat, Out: out,
-			}
 			if !once {
 				writeln(out, "following %d %s every %s — ctrl-c to stop",
 					len(s.Plan.Tables), plural(len(s.Plan.Tables), "table", "tables"), interval)
@@ -124,7 +143,20 @@ sync.interval becomes the fallback rather than the pace.`,
 	cmd.Flags().StringSliceVar(&tables, "tables", nil, "restrict to these tables")
 	cmd.Flags().BoolVar(&once, "once", false, "run a single pass and exit")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "report every pass, including empty ones")
+	cmd.Flags().StringVar(&metricsAddr, "metrics", "",
+		"serve Prometheus metrics and health checks on this address, e.g. 127.0.0.1:9847")
 	return cmd
+}
+
+// results adapts a pass for the metrics registry.
+func results(p *pipeline.Pass) []observe.Result {
+	out := make([]observe.Result, 0, len(p.Results))
+	for _, r := range p.Results {
+		out = append(out, observe.Result{
+			Table: r.Table, Rows: r.Rows, Quarantined: r.Quarantined, Skipped: r.Skipped,
+		})
+	}
+	return out
 }
 
 // startWaker connects to the daemon's event stream and reconnects if it drops.

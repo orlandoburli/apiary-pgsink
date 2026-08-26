@@ -108,8 +108,13 @@ func (p *Pass) String() string {
 			changed++
 		}
 	}
-	if p.Rows == 0 {
-		return fmt.Sprintf("no changes (%s)", p.Elapsed.Round(time.Millisecond))
+	quarantined := ""
+	if p.Quarantined > 0 {
+		quarantined = fmt.Sprintf(", %d quarantined", p.Quarantined)
 	}
-	return fmt.Sprintf("%d rows across %d table(s) (%s)", p.Rows, changed, p.Elapsed.Round(time.Millisecond))
+	if p.Rows == 0 {
+		return fmt.Sprintf("no changes%s (%s)", quarantined, p.Elapsed.Round(time.Millisecond))
+	}
+	return fmt.Sprintf("%d rows across %d table(s)%s (%s)",
+		p.Rows, changed, quarantined, p.Elapsed.Round(time.Millisecond))
 }

@@ -14,9 +14,10 @@ import (
 
 // Pass is one sweep over every table.
 type Pass struct {
-	Results []TableResult
-	Rows    int64
-	Elapsed time.Duration
+	Results     []TableResult
+	Rows        int64
+	Quarantined int64
+	Elapsed     time.Duration
 }
 
 // Sync runs one incremental pass: for each table, read whatever has changed
@@ -42,6 +43,7 @@ func (r *Runner) Sync(ctx context.Context, instance string) (*Pass, error) {
 		}
 		pass.Results = append(pass.Results, result)
 		pass.Rows += result.Rows
+		pass.Quarantined += result.Quarantined
 	}
 	pass.Elapsed = r.now().Sub(started)
 	return pass, nil
@@ -114,9 +116,11 @@ func (r *Runner) syncTable(ctx context.Context, instance string, planned config.
 			if err != nil {
 				return result, err
 			}
-			if _, err := writer.WriteBatch(ctx, page.Rows, extras); err != nil {
+			_, bad, err := writer.WriteBatchIsolating(ctx, page.Rows, extras)
+			if err != nil {
 				return result, err
 			}
+			result.Quarantined += int64(len(bad))
 			result.Rows += int64(len(page.Rows))
 			afterRowID = page.LastRowID
 			if len(page.Rows) < r.Plan.Sync.BatchSize {
@@ -280,4 +284,34 @@ func back(watermark string, ct *catalog.Table, overlap time.Duration) string {
 		return watermark
 	}
 	return t.Add(-overlap).Format(sqlitesrc.WatermarkLayout)
+}
+
+// Lag reports how far behind each table's replicated watermark is, in seconds.
+//
+// Only timestamp cursors give a meaningful answer: an integer watermark says
+// which row was last seen, not when. Tables keyed on one are reported through
+// their pass results instead, and are absent here rather than being given a
+// made-up number.
+func (r *Runner) Lag(ctx context.Context, instance string, now time.Time) (map[string]float64, error) {
+	marks, err := r.Target.Watermarks(ctx, instance)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]float64, len(marks))
+	for _, planned := range r.Plan.Tables {
+		c := planned.Catalog.Cursor
+		if c == nil || c.Kind != catalog.CursorTimestamp {
+			continue
+		}
+		mark, ok := marks[planned.Name]
+		if !ok || mark.Value == "" {
+			continue
+		}
+		at, err := time.Parse(sqlitesrc.WatermarkLayout, mark.Value)
+		if err != nil {
+			continue
+		}
+		out[planned.Name] = now.Sub(at.UTC()).Seconds()
+	}
+	return out, nil
 }

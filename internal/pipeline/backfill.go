@@ -35,11 +35,14 @@ type Runner struct {
 
 // TableResult reports what one table's pass did.
 type TableResult struct {
-	Table   string
-	Rows    int64
-	Skipped bool
-	Reason  string
-	Elapsed time.Duration
+	Table string
+	Rows  int64
+	// Quarantined counts rows the target refused, which were filed for an
+	// operator rather than being allowed to stall the pass.
+	Quarantined int64
+	Skipped     bool
+	Reason      string
+	Elapsed     time.Duration
 }
 
 // Backfill loads history for every planned table.
@@ -115,9 +118,11 @@ func (r *Runner) backfillTable(ctx context.Context, instance string, planned con
 		if err != nil {
 			return result, err
 		}
-		if _, err := writer.WriteBatch(ctx, page.Rows, extras); err != nil {
+		_, bad, err := writer.WriteBatchIsolating(ctx, page.Rows, extras)
+		if err != nil {
 			return result, err
 		}
+		result.Quarantined += int64(len(bad))
 		result.Rows += int64(len(page.Rows))
 		afterRowID = page.LastRowID
 

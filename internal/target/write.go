@@ -2,6 +2,7 @@ package target
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -237,4 +238,85 @@ func parseKnownLayouts(s string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+// Quarantined reports one row the target refused.
+type Quarantined struct {
+	Key   string
+	Error string
+}
+
+// WriteBatchIsolating retries a failed batch one row at a time, quarantining
+// the rows that fail on their own.
+//
+// The fast path stays a single transaction, because that is what makes a batch
+// atomic and the watermark safe. Only when it fails does the writer fall back to
+// per-row writes, which is slower but bounded to the batch — and is the
+// difference between a sink that quarantines one bad value and one that stops
+// dead on it.
+func (w *Writer) WriteBatchIsolating(ctx context.Context, rows [][]any, extras [][]ExtraValue) (int64, []Quarantined, error) {
+	written, err := w.WriteBatch(ctx, rows, extras)
+	if err == nil {
+		return written, nil, nil
+	}
+	// A cancelled context is not a poison row — retrying row by row would just
+	// fail the same way, slower.
+	if ctx.Err() != nil {
+		return 0, nil, err
+	}
+
+	written = 0
+	var bad []Quarantined
+	for i, row := range rows {
+		var rowExtras [][]ExtraValue
+		if i < len(extras) {
+			rowExtras = [][]ExtraValue{extras[i]}
+		}
+		n, rowErr := w.WriteBatch(ctx, [][]any{row}, rowExtras)
+		if rowErr == nil {
+			written += n
+			continue
+		}
+		if ctx.Err() != nil {
+			return written, bad, rowErr
+		}
+		key, qErr := w.quarantine(ctx, row, rowErr)
+		if qErr != nil {
+			// The quarantine itself failing means the target is unhealthy, not
+			// that the row is bad. Report the original failure and stop.
+			return written, bad, fmt.Errorf("%w (and quarantine failed: %v)", rowErr, qErr)
+		}
+		bad = append(bad, Quarantined{Key: key, Error: rowErr.Error()})
+	}
+	return written, bad, nil
+}
+
+// quarantine records one refused row, returning the key it was filed under.
+func (w *Writer) quarantine(ctx context.Context, row []any, cause error) (string, error) {
+	document := map[string]any{}
+	var key string
+	for j, c := range w.schema.Columns {
+		if w.sourceIdx[j] < 0 {
+			continue
+		}
+		v := row[w.sourceIdx[j]]
+		if b, ok := v.([]byte); ok {
+			v = string(b)
+		}
+		document[c.Name] = v
+		for _, k := range w.schema.Key {
+			if k == c.Name {
+				key = fmt.Sprintf("%v", v)
+			}
+		}
+	}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		encoded = []byte(fmt.Sprintf("%q", fmt.Sprint(document)))
+	}
+	_, err = w.db.pool.Exec(ctx, fmt.Sprintf(
+		`INSERT INTO %s.%s (%s, table_name, row_key, error_message, row_data)
+		 VALUES ($1, $2, $3, $4, $5)`, w.db.schema, QuarantineTable, InstanceColumn),
+		w.instance, w.schema.Name, key, cause.Error(), encoded)
+	return key, err
 }

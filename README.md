@@ -21,7 +21,8 @@ follower has.
 
 ## Status
 
-`doctor`, `migrate`, `backfill` and `sync` work.
+All four commands work, with Prometheus metrics, health checks and a poison-row
+quarantine. Not yet tagged for release.
 
 ## Requirements
 

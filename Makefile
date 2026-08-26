@@ -66,6 +66,10 @@ schema: ## Capture a schema snapshot: make schema APIARY=../apiary/bin/apiary LA
 docs: ## Serve the documentation site locally
 	mkdocs serve
 
+.PHONY: docker
+docker: ## Build the container image
+	docker build --build-arg VERSION=$(VERSION) -t apiary-pgsink:$(VERSION) .
+
 .PHONY: clean
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR) site

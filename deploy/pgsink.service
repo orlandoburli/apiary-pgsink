@@ -1,0 +1,54 @@
+# systemd unit for apiary-pgsink.
+#
+#   install -m0755 pgsink /usr/local/bin/pgsink
+#   install -m0640 -o apiary -g apiary pgsink.yaml /etc/pgsink/pgsink.yaml
+#   systemctl enable --now pgsink
+#
+# User and Group must match the Apiary daemon's. SQLite in WAL mode has no true
+# read-only reader — even a reader must be able to write the -shm wal-index file
+# — so a locked-down user of its own fails at startup with "unable to open
+# database file", which reads like a path bug and is not one.
+
+[Unit]
+Description=apiary-pgsink — replicate Apiary into PostgreSQL
+Documentation=https://orlandoburli.com.br/apiary-pgsink
+After=network-online.target apiary.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=apiary
+Group=apiary
+
+# The PostgreSQL DSN carries a password, so keep it out of the config file:
+#   echo 'POSTGRES_DSN=postgres://user:pw@host/db' > /etc/pgsink/pgsink.env
+#   chmod 0600 /etc/pgsink/pgsink.env
+EnvironmentFile=/etc/pgsink/pgsink.env
+
+ExecStart=/usr/local/bin/pgsink sync \
+  --config /etc/pgsink/pgsink.yaml \
+  --metrics 127.0.0.1:9847
+
+Restart=always
+RestartSec=5s
+
+# The sink needs to read the Apiary data directory and write its WAL index, and
+# nothing else on the filesystem.
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/apiary/.apiary
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
