@@ -36,6 +36,8 @@ Early. `doctor` works; `migrate`, `backfill` and `sync` are not implemented yet.
 
 <https://orlandoburli.github.io/apiary-pgsink>
 
-## Licence
+## License
 
-BSD 3-Clause. See [LICENSE](LICENSE).
+Licensed under the [BSD 3-Clause License](LICENSE) — the same terms as
+[Apiary](https://github.com/orlandoburli/apiary). No commercial license is
+required; see [COMMERCIAL.md](COMMERCIAL.md).
