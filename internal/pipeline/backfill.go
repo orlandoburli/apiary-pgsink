@@ -21,7 +21,14 @@ type Runner struct {
 	Live   catalog.LiveSchema
 	Target *target.DB
 	Plan   *config.Plan
-	Out    io.Writer
+	// Catalog resolves parent tables that the plan itself has disabled.
+	Catalog *catalog.Catalog
+	Out     io.Writer
+
+	// instance is the source instance of the pass in flight, so the open-row
+	// rescan can ask the target what it holds for this Apiary rather than any
+	// other sharing the schema.
+	instance string
 	// Now is injected so runs are reproducible under test.
 	Now func() time.Time
 }
@@ -81,7 +88,7 @@ func (r *Runner) backfillTable(ctx context.Context, instance string, planned con
 	mark.Table = planned.Name
 	if c := planned.Catalog.Cursor; c != nil {
 		mark.Kind = string(c.Kind)
-		if mark.Value, err = sqlitesrc.MaxCursor(ctx, r.Source, planned.Name, c.Column); err != nil {
+		if mark.Value, err = sqlitesrc.MaxCursorValue(ctx, r.Source, planned.Name, *c, planned.Filters); err != nil {
 			return result, err
 		}
 	} else {

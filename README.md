@@ -21,7 +21,7 @@ follower has.
 
 ## Status
 
-`doctor`, `migrate` and `backfill` work. `sync` is next.
+`doctor`, `migrate`, `backfill` and `sync` work.
 
 ## Requirements
 

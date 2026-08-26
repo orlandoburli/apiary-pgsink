@@ -57,3 +57,53 @@ func (d *DB) SetWatermark(ctx context.Context, instance string, w Watermark, row
 	}
 	return nil
 }
+
+// OpenKeys returns the keys of rows this target still holds in a non-terminal
+// state, most recently written first.
+//
+// This drives the open_row rescan, and it has to be the *target's* view rather
+// than the source's. A row that completes between two passes is no longer open
+// in the source, and its cursor has not moved — task_executions is keyed on an
+// autoincrement id and carries no updated_at — so asking the source "what is
+// unsettled now?" misses precisely the completion the class exists to capture.
+// Asking the target "what did I last record as unsettled?" cannot: the row is
+// in that set until the pass that settles it.
+//
+// The set is bounded by how much work Apiary can have in flight, so it is
+// normally a handful of rows. limit caps it anyway, so a target left full of
+// interrupted rows degrades to slower convergence rather than an unbounded
+// query.
+func (d *DB) OpenKeys(ctx context.Context, instance, table, keyColumn, stateColumn string, terminal []string, limit int) ([]any, error) {
+	args := []any{instance}
+	placeholders := ""
+	for i, v := range terminal {
+		if i > 0 {
+			placeholders += ", "
+		}
+		placeholders += fmt.Sprintf("$%d", len(args)+1)
+		args = append(args, v)
+	}
+	if placeholders == "" {
+		placeholders = "NULL"
+	}
+	query := fmt.Sprintf(
+		`SELECT %s FROM %s.%s
+		 WHERE %s = $1 AND (%s IS NULL OR %s NOT IN (%s))
+		 LIMIT %d`,
+		keyColumn, d.schema, table, InstanceColumn, stateColumn, stateColumn, placeholders, limit)
+
+	rows, err := d.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read open rows of %s: %w", table, err)
+	}
+	defer rows.Close()
+	var out []any
+	for rows.Next() {
+		var key any
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		out = append(out, key)
+	}
+	return out, rows.Err()
+}

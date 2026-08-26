@@ -9,6 +9,18 @@ import (
 	"github.com/orlandoburli/apiary-pgsink/internal/config"
 )
 
+// Selector is an extra predicate added to a read, on top of the table's
+// configured filters. Sync uses it to express what "changed" means for each
+// catalog class; an empty Selector selects everything.
+type Selector struct {
+	SQL  string
+	Args []any
+}
+
+// WatermarkLayout is how a normalised timestamp watermark is written. It
+// matches strftime('%Y-%m-%d %H:%M:%f', …), which renders UTC to milliseconds.
+const WatermarkLayout = "2006-01-02 15:04:05.000"
+
 // Page is one batch of rows read from a table.
 type Page struct {
 	Columns []string
@@ -25,7 +37,7 @@ type Page struct {
 // column to page on — including for the two tables with composite keys and the
 // ones whose key is a ulid. It is also stable under concurrent writes in a way
 // OFFSET is not: a row inserted behind the cursor cannot shift a later page.
-func Batch(ctx context.Context, db *sql.DB, table string, columns []string, filters []config.Filter, afterRowID int64, limit int) (*Page, error) {
+func Batch(ctx context.Context, db *sql.DB, table string, columns []string, filters []config.Filter, afterRowID int64, limit int, extra ...Selector) (*Page, error) {
 	if len(columns) == 0 {
 		return nil, fmt.Errorf("table %s: no columns selected", table)
 	}
@@ -33,6 +45,13 @@ func Batch(ctx context.Context, db *sql.DB, table string, columns []string, filt
 	clause := "rowid > ?"
 	if where != "" {
 		clause += " AND " + where
+	}
+	for _, sel := range extra {
+		if sel.SQL == "" {
+			continue
+		}
+		clause += " AND " + sel.SQL
+		args = append(args, sel.Args...)
 	}
 	query := fmt.Sprintf("SELECT rowid, %s FROM %s WHERE %s ORDER BY rowid LIMIT ?",
 		strings.Join(columns, ", "), table, clause)
@@ -127,22 +146,6 @@ func sqlOp(op config.Op) string {
 	default:
 		return "="
 	}
-}
-
-// MaxCursor reads a table's highest cursor value, as text.
-//
-// Backfill takes this before it starts scanning and records it as the watermark
-// afterwards. Rows written during the backfill therefore sit above the
-// watermark and are picked up by the first sync pass — at the cost of some
-// re-delivery, which the upsert absorbs. Taking it afterwards instead would
-// skip anything written during the scan.
-func MaxCursor(ctx context.Context, db *sql.DB, table, column string) (string, error) {
-	var value sql.NullString
-	query := fmt.Sprintf("SELECT MAX(%s) FROM %s", column, table)
-	if err := db.QueryRowContext(ctx, query).Scan(&value); err != nil {
-		return "", fmt.Errorf("read max %s.%s: %w", table, column, err)
-	}
-	return value.String, nil
 }
 
 // CountRows returns how many rows a table holds under the given filters, for

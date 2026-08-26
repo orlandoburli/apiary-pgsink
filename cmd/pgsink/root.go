@@ -11,7 +11,7 @@ func newRootCmd() *cobra.Command {
   pgsink doctor     check the catalog against a live Apiary database
   pgsink migrate    create or alter the target tables
   pgsink backfill   load history
-  pgsink sync       follow forever                          (not yet implemented)
+  pgsink sync       follow forever
 
 Backfill and sync are the same pipeline; only the starting watermark and the
 stop condition differ.`,
@@ -19,6 +19,6 @@ stop condition differ.`,
 		SilenceErrors: true,
 		Version:       version,
 	}
-	cmd.AddCommand(newDoctorCmd(), newMigrateCmd(), newBackfillCmd())
+	cmd.AddCommand(newDoctorCmd(), newMigrateCmd(), newBackfillCmd(), newSyncCmd())
 	return cmd
 }

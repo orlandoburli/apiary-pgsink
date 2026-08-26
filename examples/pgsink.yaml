@@ -59,6 +59,9 @@ tables:
   task_executions:
     extra_fields:
       runner_used: "${row.runner}"
+    # Filtering on the state column of an open_row table is supported, but it
+    # changes WHEN rows appear: an execution stays invisible until it settles,
+    # then arrives complete. Drop this filter to see rows while they run.
     filters:
       - {column: status, op: in, value: [success, failed]}
 

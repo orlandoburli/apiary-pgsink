@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/orlandoburli/apiary-pgsink/internal/catalog"
 )
@@ -27,6 +28,16 @@ type Table struct {
 	ExtraFields []ExtraField
 	Filters     []Filter
 	JSONColumns []string
+}
+
+// OverlapDuration returns the cursor overlap window.
+func (p *Plan) OverlapDuration() (time.Duration, error) {
+	return parseDur("sync.overlap", p.Sync.Overlap)
+}
+
+// IntervalDuration returns the poll interval.
+func (p *Plan) IntervalDuration() (time.Duration, error) {
+	return parseDur("sync.interval", p.Sync.Interval)
 }
 
 // Windowed reports whether a `since`/`until` window applied to this table.
