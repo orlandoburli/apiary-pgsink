@@ -26,6 +26,8 @@ quarantine. Not yet tagged for release.
 
 ## Requirements
 
+- **macOS or Linux**, amd64 or arm64. A launchd agent and a systemd unit are
+  both shipped in `deploy/`.
 - Runs **on the same host as the Apiary daemon**, as the daemon's user or in a
   group with write access to its data directory. SQLite in WAL mode has no true
   read-only reader — even a reader must be able to write the `-shm` wal-index

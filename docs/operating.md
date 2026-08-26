@@ -72,9 +72,36 @@ pgsink runs **on the daemon's host, as the daemon's user**. See
 [Deployment](deployment.md) for why, and for the WAL permission rule that will
 otherwise bite on first start.
 
+=== "macOS (launchd)"
+
+    Apiary itself runs under launchd on a Mac, and pgsink has to run beside it as
+    the same user, so the shipped plist is a **LaunchAgent** rather than a
+    LaunchDaemon: an agent runs in your login session, a daemon runs as root
+    before login and is the wrong shape for this.
+
+    ```bash
+    sed "s/USERNAME/$(id -un)/g" deploy/com.orlandoburli.pgsink.plist \
+      > ~/Library/LaunchAgents/com.orlandoburli.pgsink.plist
+    # edit POSTGRES_DSN in it, then:
+    chmod 600 ~/Library/LaunchAgents/com.orlandoburli.pgsink.plist
+    launchctl load -w ~/Library/LaunchAgents/com.orlandoburli.pgsink.plist
+    ```
+
+    launchd has no `EnvironmentFile`, so the PostgreSQL DSN lives in the plist —
+    which is why it must be `chmod 600`. It carries a password.
+
+    ```bash
+    launchctl list | grep pgsink                    # is it running
+    tail -f ~/.apiary/logs/pgsink.log               # what is it doing
+    launchctl unload -w ~/Library/LaunchAgents/com.orlandoburli.pgsink.plist
+    ```
+
+    Homebrew's PostgreSQL listens on `localhost:5432`, so a local target DSN is
+    usually `postgres://$(id -un)@localhost/apiary`.
+
 === "systemd"
 
-    The shipped unit is in `deploy/pgsink.service`.
+    Linux. The shipped unit is in `deploy/pgsink.service`.
 
     ```bash
     install -m0755 pgsink /usr/local/bin/pgsink

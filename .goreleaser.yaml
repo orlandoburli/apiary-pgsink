@@ -27,6 +27,7 @@ archives:
       - LICENSE
       - examples/pgsink.yaml
       - deploy/pgsink.service
+      - deploy/com.orlandoburli.pgsink.plist
 
 dockers_v2:
   - id: pgsink

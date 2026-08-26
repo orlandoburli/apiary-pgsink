@@ -44,6 +44,20 @@ It silences the error and corrupts your results. `immutable=1` promises SQLite
 that the file cannot change while the daemon is actively writing to it, so reads
 go quietly wrong instead of failing loudly. pgsink does not accept it.
 
+## Platforms
+
+pgsink runs on **macOS and Linux**, on amd64 and arm64 — everything it depends
+on is portable: a Unix socket, SQLite's WAL, and a PostgreSQL connection. Both
+the binary and the container image are static, because `modernc.org/sqlite` and
+`pgx` are pure Go and CGO stays off.
+
+Only the *service wrapper* differs. `deploy/pgsink.service` is a systemd unit for
+Linux; `deploy/com.orlandoburli.pgsink.plist` is a launchd agent for macOS. See
+[Operating](operating.md#deployment).
+
+On a Mac the permission rule above is usually satisfied for free: the Apiary
+daemon runs in your own login session, and so does a LaunchAgent.
+
 ## Containers
 
 A container works, but it must bind-mount the Apiary data directory and run as

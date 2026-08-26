@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd agent for apiary-pgsink on macOS.
+
+    cp deploy/com.orlandoburli.pgsink.plist ~/Library/LaunchAgents/
+    chmod 600 ~/Library/LaunchAgents/com.orlandoburli.pgsink.plist
+    launchctl load -w ~/Library/LaunchAgents/com.orlandoburli.pgsink.plist
+
+  A LaunchAgent, not a LaunchDaemon: pgsink must run as the same user as the
+  Apiary daemon, because SQLite in WAL mode has no true read-only reader — even
+  a reader must be able to write the -shm wal-index file. On a Mac the daemon is
+  normally your own login session, and an agent runs there. A LaunchDaemon runs
+  as root before login and is the wrong shape for this.
+
+  Replace USERNAME below with your short username (`id -un`).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.orlandoburli.pgsink</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/pgsink</string>
+        <string>sync</string>
+        <string>--config</string>
+        <string>/Users/USERNAME/.apiary/pgsink.yaml</string>
+        <string>--metrics</string>
+        <string>127.0.0.1:9847</string>
+    </array>
+
+    <!--
+      launchd has no EnvironmentFile, so the PostgreSQL DSN lives here. That is
+      why this file must be chmod 600 — it carries a password.
+    -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>POSTGRES_DSN</key>
+        <string>postgres://user:password@localhost/apiary</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart if it exits, with a pause so a misconfiguration does not spin. -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/USERNAME</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/USERNAME/.apiary/logs/pgsink.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/USERNAME/.apiary/logs/pgsink.log</string>
+
+    <!-- Background work: do not compete with the foreground for CPU or I/O. -->
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+</dict>
+</plist>
