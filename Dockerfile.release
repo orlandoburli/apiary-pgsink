@@ -1,0 +1,14 @@
+# Release image. GoReleaser has already cross-compiled the binary, so this only
+# packages it — the repo's Dockerfile remains the build-from-source path.
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
+COPY pgsink /usr/local/bin/pgsink
+
+# pgsink reads the Apiary daemon's SQLite database directly, and SQLite in WAL
+# mode has no true read-only reader: even a reader must be able to write the
+# -shm wal-index file. Run as the daemon's user and bind-mount its data
+# directory read-write, or this fails at startup with "unable to open database
+# file". The UID here is a placeholder — override it to match your host.
+USER 1000:1000
+ENTRYPOINT ["/usr/local/bin/pgsink"]
+CMD ["sync", "--config", "/etc/pgsink/pgsink.yaml"]

@@ -28,6 +28,20 @@ archives:
       - examples/pgsink.yaml
       - deploy/pgsink.service
 
+dockers_v2:
+  - id: pgsink
+    ids: [pgsink]
+    images: ["ghcr.io/orlandoburli/apiary-pgsink"]
+    tags:
+      - "{{ .Version }}"
+      - latest
+    dockerfile: Dockerfile.release
+    platforms: [linux/amd64, linux/arm64]
+    labels:
+      org.opencontainers.image.source: https://github.com/orlandoburli/apiary-pgsink
+      org.opencontainers.image.description: Replicate an Apiary database into PostgreSQL
+      org.opencontainers.image.licenses: BSD-3-Clause
+
 checksum:
   name_template: checksums.txt
 
@@ -39,3 +53,55 @@ changelog:
 
 release:
   draft: false
+  header: |
+    # First pour 🐝🐘
+
+    Replicate an [Apiary](https://github.com/orlandoburli/apiary) database into
+    PostgreSQL — backfill the history, then follow it. Standalone: its own repo,
+    its own release cadence, and no Go dependency on Apiary in either direction.
+    It reads the daemon's database; it is not a plugin and does not run inside
+    the daemon.
+
+    ```bash
+    pgsink doctor -c pgsink.yaml     # check the catalog against your database
+    pgsink migrate -c pgsink.yaml    # create the target tables
+    pgsink backfill -c pgsink.yaml   # load history
+    pgsink sync -c pgsink.yaml       # follow, with --metrics for Prometheus
+    ```
+
+    Backfill and sync are the same pipeline — only the starting watermark and the
+    stop condition differ — so the backfill path is exercised by every test the
+    follower has.
+
+    ## Before you run it
+
+    **Same host, as the daemon's user.** Apiary serves its event stream over a
+    Unix socket rather than TCP, and SQLite in WAL mode has no true read-only
+    reader: even a reader must be able to write the `-shm` wal-index file. A
+    locked-down user of its own fails at startup with `unable to open database
+    file`, which reads like a path bug and is not one. See
+    [Deployment](https://orlandoburli.com.br/apiary-pgsink/deployment/).
+
+    **The sink is an archive.** Apiary prunes old logs and can delete tasks; a
+    cursor-based follower never observes a delete, so PostgreSQL retains rows
+    Apiary has dropped. For reporting that is a feature — but it is a stated
+    choice, not an accident.
+
+    **Filtering an `open_row` table on its state column changes when rows
+    appear.** The shipped example filters `task_executions` on `status`, so an
+    execution stays invisible until it settles and then arrives complete. Drop
+    the filter to watch runs in flight.
+
+    ## Notes
+
+    Two of Apiary's tables — `task_executions` and `step_runs` — are written
+    twice: inserted at dispatch with zero cost, updated at completion with the
+    tokens, cost and timings, and neither carries `updated_at`. Following them
+    correctly is most of what this tool does. See
+    [the table catalog](https://orlandoburli.com.br/apiary-pgsink/catalog/).
+
+    Timestamps are normalised to UTC before comparison. Apiary writes them with
+    a local offset, and rows predating its `_time_format` fix carry a Go
+    monotonic-clock suffix that its own date functions silently drop — those are
+    parsed here rather than discarded, so the target holds history the Apiary
+    dashboard does not show.
