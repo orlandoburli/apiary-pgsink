@@ -34,7 +34,7 @@ Early. `doctor` works; `migrate`, `backfill` and `sync` are not implemented yet.
 
 ## Documentation
 
-<https://orlandoburli.github.io/apiary-pgsink>
+<https://orlandoburli.com.br/apiary-pgsink>
 
 ## License
 

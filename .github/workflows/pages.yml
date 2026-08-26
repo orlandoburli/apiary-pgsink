@@ -29,8 +29,11 @@ jobs:
       - name: Copy README into docs/
         run: |
           cp README.md docs/index.md
+          cp COMMERCIAL.md docs/commercial.md
           cp LICENSE docs/LICENSE   # served as /LICENSE
           sed -i 's|](docs/|](|g' docs/index.md
+          sed -i 's|](COMMERCIAL.md)|](commercial.md)|g' docs/index.md
+          sed -i 's|](LICENSE)|](LICENSE)|g' docs/index.md
       - run: mkdocs build --strict
       - uses: actions/upload-pages-artifact@v3
         with:

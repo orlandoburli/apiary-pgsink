@@ -1,6 +1,6 @@
 site_name: apiary-pgsink
 site_description: Replicate an Apiary database into PostgreSQL
-site_url: https://orlandoburli.github.io/apiary-pgsink/
+site_url: https://orlandoburli.com.br/apiary-pgsink/
 repo_url: https://github.com/orlandoburli/apiary-pgsink
 edit_uri: edit/main/docs/
 
@@ -31,9 +31,10 @@ nav:
   - Home: index.md
   - Deployment: deployment.md
   - Table catalog: catalog.md
+  - Licensing: commercial.md
 
 extra:
   social:
     - icon: fontawesome/solid/link
-      link: https://orlandoburli.github.io/apiary
+      link: https://orlandoburli.com.br/apiary
       name: Apiary documentation
