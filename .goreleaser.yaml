@@ -1,6 +1,11 @@
 version: 2
 project_name: pgsink
 
+# The tap token is optional: without it the cask step skips rather than failing
+# the release, so a fork or a local snapshot can still cut one.
+env:
+  - TAP_GITHUB_TOKEN={{ envOrDefault "TAP_GITHUB_TOKEN" "" }}
+
 before:
   hooks:
     - go mod tidy
@@ -42,6 +47,34 @@ dockers_v2:
       org.opencontainers.image.source: https://github.com/orlandoburli/apiary-pgsink
       org.opencontainers.image.description: Replicate an Apiary database into PostgreSQL
       org.opencontainers.image.licenses: BSD-3-Clause
+
+# Homebrew (macOS + Linux). Pushes a cask to orlandoburli/homebrew-tap →
+#   brew install --cask orlandoburli/tap/pgsink
+# Same tap as Apiary itself, so both install the same way. Needs
+# TAP_GITHUB_TOKEN — a PAT with contents:write on the tap repo — in this
+# repository's secrets; without it the step skips.
+homebrew_casks:
+  - name: pgsink
+    ids: [pgsink]
+    repository:
+      owner: orlandoburli
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: "https://orlandoburli.com.br/apiary-pgsink/"
+    description: "Replicate an Apiary database into PostgreSQL — backfill the history, then follow it."
+    commit_author:
+      name: goreleaser-bot
+      email: goreleaser-bot@users.noreply.github.com
+    skip_upload: '{{ if .Env.TAP_GITHUB_TOKEN }}auto{{ else }}true{{ end }}'
+    # Unsigned binary: strip the Gatekeeper quarantine flag on install so macOS
+    # does not block it. Matches how Apiary's own cask does it.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/pgsink"]
+          end
 
 checksum:
   name_template: checksums.txt

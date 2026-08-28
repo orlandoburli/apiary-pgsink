@@ -9,11 +9,17 @@ Go dependency on Apiary in either direction. It reads the daemon's database; it
 is not a plugin and does not run inside the daemon.
 
 ```bash
+brew install --cask orlandoburli/tap/pgsink
+
 pgsink doctor      # check the table catalog against a live Apiary database
 pgsink migrate     # create or alter the target tables
 pgsink backfill    # load history
 pgsink sync        # follow forever
 ```
+
+**[Installation](https://orlandoburli.com.br/apiary-pgsink/installation/)** ·
+**[Quickstart](https://orlandoburli.com.br/apiary-pgsink/quickstart/)** —
+five minutes from nothing to a PostgreSQL copy that stays current.
 
 Backfill and sync are the same pipeline. Only the starting watermark and the
 stop condition differ, so the backfill path is exercised by every test the
