@@ -183,8 +183,10 @@ tables:
 			t.Errorf("%s should be disabled", tbl.Name)
 		}
 	}
-	if len(p.Tables) != 22 {
-		t.Errorf("enabled tables = %d, want 22 of 24", len(p.Tables))
+	// 23 catalog tables since apiary #468 dropped dispatcher_state, minus the
+	// two disabled above.
+	if len(p.Tables) != 21 {
+		t.Errorf("enabled tables = %d, want 21 of 23", len(p.Tables))
 	}
 }
 

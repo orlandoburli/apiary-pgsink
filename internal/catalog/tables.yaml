@@ -26,7 +26,7 @@
 
 schema_version: 1
 apiary_compat: ">=0.12.0"
-generated_from: apiary v0.17.x (24 tables)
+generated_from: apiary v0.21.x (23 tables; dispatcher_state dropped in #468)
 
 tables:
 
@@ -131,15 +131,23 @@ tables:
     class: mutable
     key: [id]
     cursor: {column: updated_at, kind: timestamp}
-    state: {column: state, terminal: [done, failed, interrupted]}
+    state: {column: state, terminal: [done, failed, canceled, interrupted]}
     timestamps: [created_at, updated_at]
+    notes: >
+      'canceled' is terminal since apiary #465; 'interrupted' is the legacy
+      spelling and stays listed so a database that has not run the state
+      migration still settles. An orphaned instance now reads as
+      state='blocked' + blocked_reason='interrupted', and 'blocked' is
+      deliberately NOT terminal — a blocked row can still move, so re-reading
+      it is correct. Interrupted rows therefore stay in the open set until the
+      daemon's next reconcile rewrites them.
 
   - name: dispatch_jobs
     time_column: created_at
     class: mutable
     key: [id]
     cursor: {column: updated_at, kind: timestamp}
-    state: {column: state, terminal: [succeeded, failed, canceled]}
+    state: {column: state, terminal: [done, failed, canceled, succeeded]}
     timestamps: [created_at, updated_at, available_at, lease_expires_at, terminal_at]
     json_columns: [payload, required_labels, required_capabilities]
     large_columns: [payload]
@@ -158,14 +166,6 @@ tables:
     cursor: {column: updated_at, kind: timestamp}
     timestamps: [updated_at, registered_at, last_heartbeat]
     json_columns: [labels, capabilities]
-
-  - name: dispatcher_state
-    time_column: updated_at
-    class: mutable
-    key: [id]
-    cursor: {column: updated_at, kind: timestamp}
-    timestamps: [updated_at]
-    notes: Exactly one row, id=1. Cheap to follow, rarely interesting.
 
   # ---------- open_row ----------
 
@@ -192,7 +192,7 @@ tables:
     cursor: {column: finished_at, kind: timestamp}
     state:
       column: state
-      terminal: [passed, failed, skipped, skipped_cached, interrupted]
+      terminal: [done, failed, skipped, passed, skipped_cached, interrupted]
     timestamps: [started_at, finished_at]
     json_columns: [structured_output, publish_payload, slow_tools]
     large_columns: [output, structured_output, summary, input_prompt]
