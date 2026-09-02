@@ -87,20 +87,22 @@ changelog:
 
 release:
   draft: false
+  # NOTE: this header is EVERGREEN. It is baked into every release, so anything
+  # release-specific written here is a lie on the next tag — v0.2.0 shipped
+  # carrying v0.1.1's "this release adds the launchd agent" paragraph, which by
+  # then described neither the tag nor the changelog beneath it.
+  #
+  # Per-release notes (the theme line and what changed) go on the release itself
+  # after the build: `gh release edit vX.Y.Z --notes-file ...`. The H1 below is a
+  # placeholder that the edit replaces.
   header: |
-    # Both platforms 🐝🐘
+    # pgsink 🐝🐘
 
     Replicate an [Apiary](https://github.com/orlandoburli/apiary) database into
     PostgreSQL — backfill the history, then follow it. Standalone: its own repo,
     its own release cadence, and no Go dependency on Apiary in either direction.
     It reads the daemon's database; it is not a plugin and does not run inside
     the daemon.
-
-    **This release adds the launchd agent for macOS.** v0.1.0 shipped darwin
-    binaries but only a systemd unit, which is no use on a Mac — and since
-    pgsink has to run on the daemon's host, that left the most likely
-    deployment with nothing to install. `deploy/com.orlandoburli.pgsink.plist`
-    is now in the archives.
 
     ```bash
     pgsink doctor -c pgsink.yaml     # check the catalog against your database
